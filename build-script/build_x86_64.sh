@@ -6,16 +6,15 @@
 
 int_build_env()
 {
-export VERSION="1.3"
+export VERSION="1.5"
 export SCRIPT_NAME="ACR LINUX BUILD SCRIPT"
-export SCRIPT_VERSION="1.3"
+export SCRIPT_VERSION="1.5"
 export LINUX_NAME="acr-linux"
-export DISTRIBUTION_VERSION="2020.4"
-export ISO_FILENAME="minimal-acrlinux_x86_64-${SCRIPT_VERSION}.iso"
+export DISTRIBUTION_VERSION="2020.5"
 
 # BASE
 export KERNEL_BRANCH="5.x" 
-export KERNEL_VERSION="5.3.11"
+export KERNEL_VERSION="5.6.14"
 export BUSYBOX_VERSION="1.30.1"
 export SYSLINUX_VERSION="6.03"
 
@@ -34,12 +33,28 @@ export BUILD_OTHER_DIR="build_script_for_other"
 export BOOT_SCRIPT_DIR="boot_script"
 export NET_SCRIPT="network"
 export CONFIG_ETC_DIR="${BASEDIR}/os-configs/etc"
+export WORKSPACE="${BASEDIR}/workspace"
 
 #cross compile
 export CROSS_COMPILE64=$BASEDIR/cross_gcc/x86_64-linux/bin/x86_64-linux-
 export ARCH64="x86_64"
 export CROSS_COMPILEi386=$BASEDIR/cross_gcc/i386-linux/bin/i386-linux-
 export ARCHi386="i386"
+
+if [ "$3" == "64" ]
+then
+export ARCH = $ARCH64
+export CROSS_COMPILE = $CROSS_COMPILE64
+elif [ "$3" == "32" ]
+then
+export ARCH = $ARCHi386
+export CROSS_COMPILE = $CROSS_COMPILEi386
+else
+export ARCH = $ARCH64
+export CROSS_COMPILE = $CROSS_COMPILE64
+fi
+
+export ISO_FILENAME="minimal-acrlinux-${ARCH}-${SCRIPT_VERSION}.iso"
 
 #Dir and mode
 export ETCDIR="etc"
@@ -79,12 +94,29 @@ prepare_dirs () {
     then
         mkdir    ${ISODIR}
     fi
+    if [ ! -d ${WORKSPACE} ];
+    then
+	mkdir ${WORKSPACE}
+    fi
 }
 
 build_kernel () {
     cd ${SOURCEDIR}
-			
-    cd linux-${KERNEL_VERSION}
+
+    if [ ! -d ${WORKSPACE}/linux-${KERNEL_VERSION} ];
+    then
+	    echo "copying kernel src to workspace"
+	    cp -r linux-${KERNEL_VERSION} ${WORKSPACE}
+	    echo "copying kernel patch to workspace"
+	    cp -r kernel-patch ${WORKSPACE}
+	    cd  ${WORKSPACE}/linux-${KERNEL_VERSION}
+	    for patch in $(ls ../kernel-patch | grep '^[000-999]*_.*.patch'); do
+		    echo "applying patch .... '$patch'."
+		    patch -p1 < ../kernel-patch/${patch}
+            done
+    fi
+
+    cd  ${WORKSPACE}/linux-${KERNEL_VERSION}
 	
     if [ "$1" == "-c" ]
     then		    
@@ -92,16 +124,28 @@ build_kernel () {
     elif [ "$1" == "-b" ]
     then	    
     	 cp $LIGHT_OS_KCONFIG .config
-    	 make oldconfig CROSS_COMPILE=$CROSS_COMPILE64 ARCH=$ARCH64 bzImage \
+    	 make oldconfig CROSS_COMPILE=$CROSS_COMPILE ARCH=$ARCH bzImage \
         	-j ${JFLAG}
-        cp arch/$ARCH64/boot/bzImage ${ISODIR}/kernel.gz
+        cp arch/$ARCH/boot/bzImage ${ISODIR}/kernel.gz
     fi   
 }
 
 build_busybox () {
     cd ${SOURCEDIR}
 
-    cd busybox-${BUSYBOX_VERSION}
+    if [ ! -d ${WORKSPACE}/busybox-${BUSYBOX_VERSION} ];
+    then
+            cp -r busybox-${BUSYBOX_VERSION} ${WORKSPACE}
+	    echo "copying busybox patch to workspace"
+            cp -r busybox-patch ${WORKSPACE}
+            cd  ${WORKSPACE}/busybox-${BUSYBOX_VERSION}
+            for patch in $(ls ../busybox-patch | grep '^[000-999]*_.*.patch'); do
+                echo "applying patch .... '$patch'."
+                patch -p1 < ../busybox-patch/${patch}
+            done
+    fi
+
+    cd ${WORKSPACE}/busybox-${BUSYBOX_VERSION}
 
     if [ "$1" == "-c" ]
     then	    
@@ -111,7 +155,7 @@ build_busybox () {
     	cp $LIGHT_OS_BUSYBOX_CONFIG .config
     	make -j$JFLAG ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE oldconfig
     sed -i 's|.*CONFIG_STATIC.*|CONFIG_STATIC=y|' .config
-    	make  ARCH=$arm CROSS_COMPILE=$CROSS_COMPIL busybox \
+    	make  ARCH=$arm CROSS_COMPILE=$CROSS_COMPILE busybox \
         	-j ${JFLAG}
 
     	make ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE install \
@@ -213,12 +257,7 @@ generate_rootfs () {
 
 
 generate_image () {
-    if [ ! -d ${SOURCEDIR}/syslinux-${SYSLINUX_VERSION} ];
-    then
-        cd ${SOURCEDIR}
-        wget -O syslinux.tar.xz http://kernel.org/pub/linux/utils/boot/syslinux/syslinux-${SYSLINUX_VERSION}.tar.xz
-        tar -xvf syslinux.tar.xz && rm syslinux.tar.xz
-    fi
+
     cd ${SOURCEDIR}/syslinux-${SYSLINUX_VERSION}
     cp bios/core/isolinux.bin ${ISODIR}/
     cp bios/com32/elflink/ldlinux/ldlinux.c32 ${ISODIR}
@@ -269,6 +308,7 @@ clean_files () {
    rm -rf ${SOURCEDIR}
    rm -rf ${ROOTFSDIR}
    rm -rf ${ISODIR}
+   rm -rf ${WORKSPACE}
 }
 
 init_work_dir()
@@ -308,6 +348,13 @@ wipe_rebuild()
 	rebuild_all
 }
 
+build_img ()
+{
+	build_all
+	generate_rootfs
+	generate_image
+}
+
 help_msg()
 {
 echo -e "###################################################################################################\n"
@@ -317,6 +364,8 @@ echo -e "############################Utility-${SCRIPT_VERSION} to Build x86_64 O
 echo -e "###################################################################################################\n"
 
 echo -e "Help message --help\n"
+
+echo -e "Build and create iso: --build-img\n"
 
 echo -e "Build All: --build-all\n"
 
@@ -439,6 +488,11 @@ fi
 if [ "$1" == "--Run-qemu" ]
 then
 test_qemu
+fi
+
+if [ "$1" == "--build-img" ]
+then
+build_img
 fi
 
 }
