@@ -8,7 +8,7 @@ int_build_env()
 {
 export VERSION="1.5"
 export SCRIPT_NAME="ACR LINUX BUILD SCRIPT"
-export SCRIPT_VERSION="1.5"
+export SCRIPT_VERSION="1.6"
 export LINUX_NAME="acr-linux"
 export DISTRIBUTION_VERSION="2020.5"
 
@@ -54,7 +54,7 @@ export ARCH=$ARCH64
 export CROSS_COMPILE=$CROSS_COMPILE64
 fi
 
-export ISO_FILENAME="minimal-acrlinux-${ARCH}-${SCRIPT_VERSION}.iso"
+export ISO_FILENAME="minimal-acrlinux-${ARCH}-${VERSION}.iso"
 
 #Dir and mode
 export ETCDIR="etc"
@@ -283,11 +283,14 @@ generate_image () {
     echo ' KERNEL kernel.gz ' >> isolinux.cfg
     echo ' APPEND initrd=rootfs.gz vga=ask ' >> isolinux.cfg
 
-    rm ${BASEDIR}/${ISO_FILENAME}
+    if [ -f ${BASEDIR}/output/${ISO_FILENAME} ]
+    then
+    rm ${BASEDIR}/output/${ISO_FILENAME}
+    fi
 
     xorriso \
         -as mkisofs \
-        -o ${BASEDIR}/${ISO_FILENAME} \
+        -o ${BASEDIR}/image/${ISO_FILENAME} \
         -b isolinux.bin \
         -c boot.cat \
         -no-emul-boot \
@@ -359,7 +362,7 @@ help_msg()
 {
 echo -e "###################################################################################################\n"
 
-echo -e "############################Utility-${SCRIPT_VERSION} to Build x86_64 OS###########################\n"
+echo -e "#####################################Utility-${SCRIPT_VERSION} to Build x86_64 OS####################################\n"
 
 echo -e "###################################################################################################\n"
 
